@@ -35,7 +35,7 @@ ENDMACRO()
 
 MACRO(include_modules_dir dir)
 	find_modules_in_dir(modules ${dir})
-	
+
 	FOREACH(module ${modules})
 		IF(NOT ${module} STREQUAL cmake
 			AND NOT ${module} STREQUAL bin
@@ -58,6 +58,15 @@ FOREACH(part ${ARGN})
 		BREAK()
 	ENDIF()
 	SET(extent ${extent}${part}/)
+ENDFOREACH()
+ENDMACRO()
+
+MACRO(find_option_dirs result base)
+SET(extent "")
+FOREACH(part ${ARGN})
+	IF(IS_DIRECTORY ${base}/${part})
+		SET(${result} ${${result}} ${base}/${part})
+	ENDIF()
 ENDFOREACH()
 ENDMACRO()
 

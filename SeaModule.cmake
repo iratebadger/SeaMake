@@ -18,6 +18,7 @@
 # Boston, MA 02110-1301, USA.
 
 include (SeaMiscUtils)
+include(CMakeDependentOption)
 
 if(NOT WIN32)
   string(ASCII 27 Esc)
@@ -107,8 +108,6 @@ endfunction(SEA_SET_GLOBAL_IF_NOT_SET)
 # - argn: list of dependencies
 ########################################################################
 function(SEA_MODULE name type mode)
-	include(CMakeDependentOption)
-
 	string(TOUPPER "${mode}" mode)
 	string(TOUPPER "${type}" type)
 
@@ -144,6 +143,8 @@ function(SEA_MODULE name type mode)
 	SEA_SET_GLOBAL_IF_NOT_SET(_sea_module_${name}_extern "")
 	SEA_SET_GLOBAL_IF_NOT_SET(_sea_module_${name}_props "")
 	SEA_SET_GLOBAL_IF_NOT_SET(_sea_module_${name}_dep_props "")
+
+	SEA_SET_GLOBAL(_sea_module_${name}_dynamic "")
 
 	SEA_SET_GLOBAL(_sea_module_${name}_target "${type}")
 
@@ -182,16 +183,32 @@ MACRO(SEA_GET_ARCH_DIRS result base)
 
 		IF(SEA_PLATFORM)
 			find_sub_dirs(__platform_dirs ${base} ${SEA_PLATFORM})
+
+			IF(SEA_TARGET)
+				FOREACH(dir ${__platform_dirs})
+					SET(${result} ${${result}} ${dir})
+					find_option_dirs(__option_dirs ${dir} ${SEA_TARGET})
+				ENDFOREACH()
+			ENDIF()
+
+			IF(SEA_ARCH)
+				FOREACH(dir ${__platform_dirs})
+					SET(${result} ${${result}} ${dir})
+					find_sub_dirs(${result} ${dir} ${SEA_ARCH})
+				ENDFOREACH()
+			ENDIF()
 		ENDIF()
 
 		IF(SEA_TARGET)
-			find_sub_dirs(__platform_dirs ${base} ${SEA_TARGET})
-		ENDIF()
+			find_option_dirs(__option_dirs ${base} ${SEA_TARGET})
 
-		foreach(dir ${__platform_dirs})
-			SET(${result} ${${result}} ${dir})
-			find_sub_dirs(${result} ${dir} ${SEA_ARCH})
-		endforeach()
+			IF(SEA_ARCH)
+				FOREACH(dir ${__option_dirs})
+					SET(${result} ${${result}} ${dir})
+					find_sub_dirs(${result} ${dir} ${SEA_ARCH})
+				ENDFOREACH()
+			ENDIF()
+		ENDIF()
 
 	ELSEIF(EXISTS ${base})
 		SET(${result} ${${result}} ${base})
@@ -204,8 +221,6 @@ ENDMACRO()
 # - argn: list source resources
 ########################################################################
 function(SEA_MODULE_SOURCES name)
-	include(CMakeDependentOption)
-
 	if("${_sea_module_${name}_target}" STREQUAL "EXTERNAL"
 		OR "${_sea_module_${name}_target}" STREQUAL "META")
 		SEA_ERROR("Can not add sources to meta or external module")
@@ -216,20 +231,9 @@ function(SEA_MODULE_SOURCES name)
 	SEA_LOG_VERBOSE(STATUS "")
 	SEA_LOG_VERBOSE(STATUS "Adding ${name} sources...")
 
-	list(APPEND search "")
-
 	foreach(src ${ARGN})
-		SEA_GET_ARCH_DIRS(search ${CMAKE_CURRENT_LIST_DIR}/${src})
+		list(APPEND _sea_module_${name}_sources ${CMAKE_CURRENT_LIST_DIR}/${src})
 	endforeach(src)
-
-	foreach(dir ${search})
-		SEA_LOG_VERBOSE(STATUS "Adding " ${dir})
-		if(IS_DIRECTORY "${dir}")
-			find_sources_dir(_sea_module_${name}_sources ${dir})
-		else(IS_DIRECTORY "${dir}")
-			list(APPEND _sea_module_${name}_sources ${dir})
-		endif(IS_DIRECTORY "${dir}")
-	endforeach(dir)
 
 	SEA_SET_GLOBAL(_sea_module_${name}_sources ${_sea_module_${name}_sources})
 endfunction(SEA_MODULE_SOURCES)
@@ -245,19 +249,10 @@ function(SEA_MODULE_INCLUDES name)
 		SEA_LOG_VERBOSE(STATUS "Adding ${name} include directories...")
 	#endif(NOT "${_sea_module_${name}_target}" STREQUAL "EXTERNAL")
 
-	list(APPEND search "")
-
 	foreach(inc ${ARGN})
-		SEA_GET_ARCH_DIRS(search ${CMAKE_CURRENT_LIST_DIR}/${inc})
+		SEA_LOG_VERBOSE(STATUS "Adding " "${CMAKE_CURRENT_LIST_DIR}/${inc}")
+		list(APPEND _sea_module_${name}_include "${CMAKE_CURRENT_LIST_DIR}/${inc}")
 	endforeach(inc)
-
-	list(REMOVE_DUPLICATES search)
-	list(REVERSE search)
-
-	foreach(dir ${search})
-		SEA_LOG_VERBOSE(STATUS "Adding " ${dir})
-		list(APPEND _sea_module_${name}_include ${dir})
-	endforeach(dir)
 
 	SEA_SET_GLOBAL(_sea_module_${name}_include ${_sea_module_${name}_include})
 endfunction(SEA_MODULE_INCLUDES)
@@ -272,8 +267,6 @@ function(SEA_MODULE_INCLUDE_PATH name)
 		message(STATUS "")
 		message(STATUS "Adding ${name} include directories...")
 	#endif(NOT "${_sea_module_${name}_target}" STREQUAL "EXTERNAL")
-
-	list(APPEND search "")
 
 	foreach(dir ${ARGN})
 		message(STATUS "Adding " ${dir})
@@ -370,7 +363,6 @@ function(_SEA_MODULE_PROPERTY_LIST_CHANGE prop_list cmd)
 		list(GET ARGN ${_vali} prop_value)
 		_SEA_MODULE_PROPERTY_SETAPPEND(${prop_list} ${cmd} ${prop_name} "${prop_value}")
 	endforeach()
-
 endfunction(_SEA_MODULE_PROPERTY_LIST_CHANGE)
 
 ########################################################################
@@ -400,6 +392,26 @@ function(SEA_MODULE_STICKY_PROPERTY name)
 	SEA_MODULE_DEPENDANT_PROPERTY(${name} ${ARGN})
 	SEA_MODULE_PROPERTY(${name} ${ARGN})
 endfunction(SEA_MODULE_STICKY_PROPERTY)
+
+########################################################################
+# Adds a dynamic target to the module, will apply post module resolution
+# - name: canonical module name
+# - argn: list of dynamic targets to add
+########################################################################
+function(SEA_MODULE_DYNAMIC_TARGET name)
+
+	foreach(target ${ARGN})
+		if("${target}" IN_LIST "_sea_module_${name}_dynamic")
+			continue()
+		endif()
+
+		list(APPEND "_sea_module_${name}_dynamic" "${target}")
+	endforeach()
+
+	SEA_SET_GLOBAL(_sea_module_${name}_dynamic ${_sea_module_${name}_dynamic})
+
+	message("${_sea_module_${name}_dynamic}")
+endfunction(SEA_MODULE_DYNAMIC_TARGET)
 
 function(_SEA_MODULE_RESOLVE_THIS name)
 	set(can_resolve TRUE)
@@ -431,7 +443,7 @@ function(_SEA_MODULE_RESOLVE_THIS name)
 			if(NOT SeaModule_${dep}_enable)
 				if("${_sea_module_${dep}_mode}" STREQUAL "REQUEST")
 					SEA_SET_ENABLE(SeaModule_${dep}_enable ON)
-				else()
+				elseif("${_sea_module_${dep}_mode}" STREQUAL "REQUIRED")
 					SEA_ERROR("	* ${name} Dependency ${dep} is disabled")
 					set(can_resolve FALSE)
 					break()
@@ -637,18 +649,83 @@ macro(_SEA_MODULE_GATHER includes sources libs)
 	endforeach(dep ${ARGN})
 endmacro(_SEA_MODULE_GATHER)
 
+function(_SEA_MODULE_RESOLVE_SOURCES sources)
+	set("${sources}" "")
+
+	if("${_sea_module_${name}_target}" STREQUAL "EXTERNAL"
+		OR "${_sea_module_${name}_target}" STREQUAL "META")
+		return()
+	endif()
+
+	list(APPEND search "")
+
+	foreach(src ${ARGN})
+		SEA_GET_ARCH_DIRS(search ${src})
+	endforeach(src)
+
+	list(REMOVE_DUPLICATES search)
+
+	foreach(dir ${search})
+		SEA_LOG_VERBOSE(STATUS "Adding " ${dir})
+		if(IS_DIRECTORY "${dir}")
+			find_sources_dir("${sources}" ${dir})
+		else(IS_DIRECTORY "${dir}")
+			list(APPEND "${sources}" ${dir})
+		endif(IS_DIRECTORY "${dir}")
+	endforeach(dir)
+
+	set("${sources}" ${${sources}} PARENT_SCOPE)
+endfunction(_SEA_MODULE_RESOLVE_SOURCES)
+
+function(_SEA_MODULE_RESOLVE_INCLUDES includes)
+	set("${includes}" "")
+
+	if("${_sea_module_${name}_target}" STREQUAL "EXTERNAL")
+		return()
+	endif()
+
+	list(APPEND search "")
+
+	foreach(inc ${ARGN})
+		SEA_GET_ARCH_DIRS(search ${inc})
+	endforeach(inc)
+
+	list(REMOVE_DUPLICATES search)
+	list(REVERSE search)
+
+	foreach(dir ${search})
+		SEA_LOG_VERBOSE(STATUS "Adding " ${dir})
+		list(APPEND "${includes}" ${dir})
+	endforeach(dir)
+
+	set("${includes}" ${${includes}} PARENT_SCOPE)
+endfunction(_SEA_MODULE_RESOLVE_INCLUDES)
+
+macro(_SEA_MODULE_RESOLVE_DYNAMIC_TARGETS targets)
+	foreach(name ${ARGN})
+		if(${SeaModule_${name}_enable})
+			list(APPEND ${targets} ${_sea_module_${name}_dynamic})
+		endif()
+	endforeach()
+
+	list(REMOVE_DUPLICATES ${targets})
+endmacro()
+
 ########################################################################
 # Emit the build targets
 ########################################################################
 function(SEA_MODULE_BUILD name)
 	_SEA_MODULE_RESOLVE()
 
+	_SEA_MODULE_RESOLVE_DYNAMIC_TARGETS(SEA_TARGET ${_sea_modules})
+	SEA_SET_GLOBAL(SEA_TARGET ${SEA_TARGET})
+
 	_SEA_PRINT_MODULE_SUMMARY(${name})
 
 	foreach(module ${_sea_modules})
 		set(_module_depends "")
-		set(_module_includes ${_sea_module_${module}_include})
-		set(_module_sources ${_sea_module_${module}_sources})
+		_SEA_MODULE_RESOLVE_INCLUDES(_module_includes ${_sea_module_${module}_include})
+		_SEA_MODULE_RESOLVE_SOURCES(_module_sources ${_sea_module_${module}_sources})
 		set(_module_libs "")
 
 		if("${_sea_module_${module}_target}" STREQUAL "META")
