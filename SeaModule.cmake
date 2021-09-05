@@ -190,6 +190,8 @@ MACRO(SEA_GET_TARGET_DIRS result base)
 	ELSEIF(EXISTS ${base})
 		SET(${result} ${${result}} ${base})
 	ENDIF()
+
+	list(REMOVE_DUPLICATES ${result})
 ENDMACRO()
 
 MACRO(SEA_GET_ARCH_DIRS result base)
@@ -228,10 +230,11 @@ MACRO(SEA_GET_ARCH_DIRS result base)
 				ENDFOREACH()
 			ENDIF()
 		ENDIF()
-
 	ELSEIF(EXISTS ${base})
 		SET(${result} ${${result}} ${base})
 	ENDIF()
+
+	list(REMOVE_DUPLICATES ${result})
 ENDMACRO()
 
 ########################################################################
@@ -420,7 +423,6 @@ endfunction(SEA_MODULE_STICKY_PROPERTY)
 # - argn: list of dynamic targets to add
 ########################################################################
 function(SEA_MODULE_DYNAMIC_TARGET name)
-
 	foreach(target ${ARGN})
 		if("${target}" IN_LIST "_sea_module_${name}_dynamic")
 			continue()
@@ -430,8 +432,6 @@ function(SEA_MODULE_DYNAMIC_TARGET name)
 	endforeach()
 
 	SEA_SET_GLOBAL(_sea_module_${name}_dynamic ${_sea_module_${name}_dynamic})
-
-	message("${_sea_module_${name}_dynamic}")
 endfunction(SEA_MODULE_DYNAMIC_TARGET)
 
 function(_SEA_MODULE_RESOLVE_THIS name)
@@ -745,8 +745,6 @@ function(SEA_MODULE_BUILD name)
 
 	foreach(module ${_sea_modules})
 		set(_module_depends "")
-		_SEA_MODULE_RESOLVE_INCLUDES(_module_includes ${_sea_module_${module}_include})
-		_SEA_MODULE_RESOLVE_SOURCES(_module_sources ${_sea_module_${module}_sources})
 		set(_module_libs "")
 
 		if("${_sea_module_${module}_target}" STREQUAL "META")
@@ -757,9 +755,14 @@ function(SEA_MODULE_BUILD name)
 			continue()
 		endif(NOT SeaModule_${module}_enable)
 
+		set(_module_includes ${_sea_module_${module}_include})
+
 		_SEA_MODULE_FLATTEN_DEPS(_module_depends ${module})
 		_SEA_MODULE_GATHER(_module_includes _module_sources _module_libs ${_module_depends})
 		SEA_LOG_VERBOSE("GATHERED ${module} ${_module_depends}")
+
+		_SEA_MODULE_RESOLVE_INCLUDES(_module_includes ${_module_includes})
+		_SEA_MODULE_RESOLVE_SOURCES(_module_sources ${_sea_module_${module}_sources})
 
 		if(NOT "${_module_includes}" STREQUAL "")
 			list(REVERSE _module_includes)
