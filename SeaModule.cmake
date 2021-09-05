@@ -111,11 +111,13 @@ function(SEA_MODULE name type mode)
 	string(TOUPPER "${mode}" mode)
 	string(TOUPPER "${type}" type)
 
-	if(NOT "${type}" STREQUAL "EXTERNAL")
+	if(NOT "${type}" STREQUAL "EXTERNAL"
+		AND NOT "${type}" STREQUAL "TOOL")
 		SEA_LOG_VERBOSE(STATUS "")
 		SEA_LOG_VERBOSE(STATUS "Configuring ${name} support...")
 		SEA_LOG_VERBOSE(STATUS "  Build ${mode} ${type}")
-	endif(NOT "${type}" STREQUAL "EXTERNAL")
+	endif(NOT "${type}" STREQUAL "EXTERNAL"
+			AND NOT "${type}" STREQUAL "TOOL")
 
 	#Add the module to the list
 	list(APPEND _sea_modules ${name})
@@ -126,7 +128,8 @@ function(SEA_MODULE name type mode)
 		if("${mode}" STREQUAL "REQUIRED"
 			OR "${type}" STREQUAL "META"
 			OR "${type}" STREQUAL "TEST"
-			OR "${type}" STREQUAL "EXTERNAL")
+			OR "${type}" STREQUAL "EXTERNAL"
+			OR "${type}" STREQUAL "TOOL")
 			set(SeaModule_${name}_enable ON)
 		else()
 			set(SeaModule_${name}_enable ${ENABLE_DEFAULT})
@@ -588,7 +591,8 @@ function(_SEA_MODULE_BUILD_THIS module sources includes deps)
 				${module}
 				${${sources}})
 			add_test(${module} ${module})
-		elseif("${_sea_module_${module}_target}" STREQUAL "EXTERNAL")
+		elseif("${_sea_module_${module}_target}" STREQUAL "EXTERNAL"
+				OR "${_sea_module_${module}_target}" STREQUAL "TOOL")
 			return()
 		elseif("${_sea_module_${module}_target}" STREQUAL "COMPONENT")
 			SEA_LOG(STATUS "building " ${module} " as component")
@@ -644,7 +648,7 @@ macro(_SEA_MODULE_FLATTEN_DEPS deps module)
 	endforeach(dep ${_sea_module_${module}_deps})
 endmacro(_SEA_MODULE_FLATTEN_DEPS)
 
-macro(_SEA_MODULE_GATHER includes sources libs)
+macro(_SEA_MODULE_GATHER includes sources libs tools)
 	foreach(dep ${ARGN})
 		if("${dep}" IN_LIST ${libs})
 			continue()
@@ -661,6 +665,8 @@ macro(_SEA_MODULE_GATHER includes sources libs)
 		set(${includes} ${${includes}} ${_sea_module_${dep}_include})
 
 		if("${_sea_module_${dep}_target}" STREQUAL "EXTERNAL")
+		elseif("${_sea_module_${dep}_target}" STREQUAL "TOOL")
+			list(APPEND ${tools} ${dep})
 		elseif("${_sea_module_${dep}_target}" STREQUAL "COMPONENT")
 		else("${_sea_module_${dep}_target}" STREQUAL "EXTERNAL")
 			list(APPEND ${libs} ${dep})
@@ -758,7 +764,13 @@ function(SEA_MODULE_BUILD name)
 		endif(NOT SeaModule_${module}_enable)
 
 		_SEA_MODULE_FLATTEN_DEPS(_module_depends ${module})
-		_SEA_MODULE_GATHER(_module_includes _module_sources _module_libs ${_module_depends})
+
+		_SEA_MODULE_GATHER(_module_includes
+							_module_sources
+							_module_libs
+							_module_tools
+							${_module_depends})
+
 		SEA_LOG_VERBOSE("GATHERED ${module} ${_module_depends}")
 
 		if(NOT "${_module_includes}" STREQUAL "")
@@ -812,5 +824,12 @@ function(SEA_MODULE_BUILD name)
 				AND NOT "${_sea_module_${module}_target}" STREQUAL "COMPONENT")
 		endif(NOT "${_module_libs}" STREQUAL "")
 
+		if(NOT "${_module_tools}" STREQUAL "")
+			list(REVERSE _module_tools)
+			list(REMOVE_DUPLICATES _module_tools)
+			list(REVERSE _module_tools)
+
+			add_dependencies(${module} ${_module_tools})
+		endif(NOT "${_module_tools}" STREQUAL "")
 	endforeach(module)
 endfunction(SEA_MODULE_BUILD)
