@@ -333,81 +333,56 @@ function(SEA_MODULE_EXTERNALS name)
 	SEA_SET_GLOBAL(_sea_module_${name}_extern ${_sea_module_${name}_extern})
 endfunction(SEA_MODULE_EXTERNALS)
 
-macro(LIST_REPLACE LIST INDEX NEWVALUE)
-    list(INSERT ${LIST} ${INDEX} ${NEWVALUE})
-    MATH(EXPR __INDEX "${INDEX} + 1")
-    list (REMOVE_AT ${LIST} ${__INDEX})
-endmacro(LIST_REPLACE)
-
 ########################################################################
 # Changes an existing property in a property list.  A property list is
 # a normal cmake list where the elements alternate with prop_name and
 # prop_value.
-# - prop_list:  canonical list name
-# - cmd:        if APPEND (and prop exists in list), append prop_value
-#               to existing value separated with a space.
-# - prop_name:  name of property to set
-# - prop_value: value
+# - name:		canonical module name
+# - prop_list:  property list type, props or dep_props
+# - property:	property name
+# - argn:       values
 ########################################################################
-function(_SEA_MODULE_PROPERTY_SETAPPEND prop_list cmd prop_name prop_value )
-	# Check if the property is in the list
-	list (FIND ${prop_list} "${prop_name}" prop_idx)
-	if (${prop_idx} GREATER -1)
-	    # If property is in the list replace it
-		math(EXPR val_idx "${prop_idx} + 1")
-		list (GET ${prop_list} ${val_idx} old_value)
-		if("${cmd}" STREQUAL "APPEND")
-			set (prop_value "${old_value} ${prop_value}")
-		endif()
-		LIST_REPLACE(${prop_list} ${val_idx} ${prop_value})
-	else()
-		list (APPEND ${prop_list} ${prop_name} ${prop_value})
-	endif()
-	SEA_SET_GLOBAL(${prop_list} ${${prop_list}})
-endfunction(_SEA_MODULE_PROPERTY_SETAPPEND)
-
-########################################################################
-# Changes an existing property in a property list.  A property list is
-# a normal cmake list where the elements alternate with prop_name and
-# prop_value.
-# - prop_list:  canonical list name
-# - cmd:        if APPEND (and prop exists in list), append prop_value
-#               to existing value separated with a space.
-# - argn:       name/value pairs
-########################################################################
-function(_SEA_MODULE_PROPERTY_LIST_CHANGE prop_list cmd)
+function(_SEA_MODULE_PROPERTY_LIST_CHANGE name prop_list property)
 	list(LENGTH ARGN num_args)
 
 	if(${num_args} EQUAL 0)
 		return()
 	endif()
 
-	math(EXPR num_args "${num_args} - 1")
+	list(FIND _sea_module_${name}_${prop_list} ${property} pval)
 
-	foreach(i RANGE 0 ${num_args} 2)
-		math(EXPR _vali "${i} + 1")
-		list(GET ARGN ${i} prop_name)
-		list(GET ARGN ${_vali} prop_value)
-		_SEA_MODULE_PROPERTY_SETAPPEND(${prop_list} ${cmd} ${prop_name} "${prop_value}")
-	endforeach()
+	if(${pval} EQUAL -1)
+		set(_sea_module_${name}_${prop_list} ${property})
+		set(_sea_module_${name}_${prop_list}_${property} ${ARGN})
+
+		SEA_SET_GLOBAL(_sea_module_${name}_${prop_list}
+						${_sea_module_${name}_${prop_list}})
+	else()
+		list(APPEND _sea_module_${name}_${prop_list}_${property} ${ARGN})
+	endif()
+
+	SEA_SET_GLOBAL(_sea_module_${name}_${prop_list}_${property}
+				${_sea_module_${name}_${prop_list}_${property}})
 endfunction(_SEA_MODULE_PROPERTY_LIST_CHANGE)
 
 ########################################################################
 # Adds properties to a target
 # - name: canonical module name
-# - argn: name/value pairs
+# - property: name of the property to set
+# - argn: List of values to append
 ########################################################################
-function(SEA_MODULE_PROPERTY name)
-	_SEA_MODULE_PROPERTY_LIST_CHANGE(_sea_module_${name}_props "APPEND" ${ARGN})
+function(SEA_MODULE_PROPERTY name property)
+	_SEA_MODULE_PROPERTY_LIST_CHANGE(${name} props ${property} ${ARGN})
 endfunction(SEA_MODULE_PROPERTY)
 
 ########################################################################
 # Adds dependant properties to a target, these apply to dependant targets
 # - name: canonical module name
-# - argn: list of property value pairs
+# - property: name of the property to set
+# - argn: List of values to append
 ########################################################################
-function(SEA_MODULE_DEPENDANT_PROPERTY name)
-	_SEA_MODULE_PROPERTY_LIST_CHANGE(_sea_module_${name}_dep_props "APPEND" ${ARGN})
+function(SEA_MODULE_DEPENDANT_PROPERTY name property)
+	_SEA_MODULE_PROPERTY_LIST_CHANGE(${name} dep_props ${property} ${ARGN})
 endfunction(SEA_MODULE_DEPENDANT_PROPERTY)
 
 ########################################################################
@@ -415,9 +390,9 @@ endfunction(SEA_MODULE_DEPENDANT_PROPERTY)
 # - name: canonical module name
 # - argn: list of property value pairs
 ########################################################################
-function(SEA_MODULE_STICKY_PROPERTY name)
-	SEA_MODULE_DEPENDANT_PROPERTY(${name} ${ARGN})
-	SEA_MODULE_PROPERTY(${name} ${ARGN})
+function(SEA_MODULE_STICKY_PROPERTY name property)
+	SEA_MODULE_DEPENDANT_PROPERTY(${name} ${property} ${ARGN})
+	SEA_MODULE_PROPERTY(${name} ${property} ${ARGN})
 endfunction(SEA_MODULE_STICKY_PROPERTY)
 
 ########################################################################
@@ -487,13 +462,13 @@ function(_SEA_MODULE_RESOLVE_THIS name)
 			return()
 		endif()
 	endif()
-
-	CMAKE_DEPENDENT_OPTION(
-		SeaModule_${name}_enable
-		"enable ${name} support"
-		${SeaModule_${name}_enable}
-		"${module_enable}"
-		OFF)
+#
+#	CMAKE_DEPENDENT_OPTION(
+#		SeaModule_${name}_enable
+#		"enable ${name} support"
+#		${SeaModule_${name}_enable}
+#		"${module_enable}"
+#		OFF)
 
 	SEA_SET_ENABLE(SeaModule_${name}_enable ${SeaModule_${name}_enable})
 
@@ -533,27 +508,15 @@ function(_SEA_MERGE_TARGET_PROPERTIES module)
 	SEA_LOG_VERBOSE("MERGING PROPS FOR ${module}")
 	foreach(dep ${ARGN})
 		SEA_LOG_VERBOSE(" -- FROM " ${dep})
-		list(LENGTH _sea_module_${dep}_dep_props fromlen)
 
-		if(${fromlen} EQUAL 0)
-			continue()
-		endif()
-
-		math(EXPR fromlen "${fromlen} - 1")
-
-		foreach(i RANGE 0 ${fromlen} 2)
-			list(GET _sea_module_${dep}_dep_props ${i} prop)
-			math(EXPR _vali "${i} + 1")
-			list(GET _sea_module_${dep}_dep_props ${_vali} val)
-			SEA_LOG_VERBOSE("PROP " ${module} ${prop})
+		foreach(prop ${_sea_module_${dep}_dep_props})
+			SEA_LOG_VERBOSE(" ---- " ${prop} " => ${_sea_module_${dep}_dep_props_${prop}}")
 			get_target_property(extend ${module} ${prop})
-
 			if(extend)
-				set_target_properties(${module} PROPERTIES ${prop} "${extend} ${val}")
+				set_target_properties(${module} PROPERTIES ${prop} "${extend};${_sea_module_${dep}_dep_props_${prop}}")
 			else()
-			set_target_properties(${module} PROPERTIES ${prop} "${val}")
+				set_target_properties(${module} PROPERTIES ${prop} "${_sea_module_${dep}_dep_props_${prop}}")
 			endif()
-
 		endforeach()
 	endforeach()
 endfunction(_SEA_MERGE_TARGET_PROPERTIES)
@@ -611,14 +574,11 @@ function(_SEA_MODULE_BUILD_THIS module sources includes deps)
 
 		if(NOT "${_sea_module_${module}_props}" STREQUAL "")
 			SEA_LOG("Set target props ${module} : " ${_sea_module_${module}_props})
-			set_target_properties(${module} PROPERTIES ${_sea_module_${module}_props})
+			foreach(prop ${_sea_module_${module}_props})
+				set_target_properties(${module} PROPERTIES ${prop} "${_sea_module_${module}_props_${prop}}")
+			endforeach()
 		endif()
 
-#		if("${_sea_module_${module}_target}" STREQUAL "SHARED"
-#			OR "${_sea_module_${module}_target}" STREQUAL "TEST"
-#			OR "${_sea_module_${module}_target}" STREQUAL "EXECUTABLE")
-#			_SEA_MERGE_TARGET_PROPERTIES(${module} ${${deps}})
-#		endif()
 		_SEA_MERGE_TARGET_PROPERTIES(${module} ${${deps}})
 
 		foreach(inc ${${includes}})
