@@ -539,7 +539,9 @@ function(_SEA_MERGE_TARGET_PROPERTIES module)
 			continue()
 		endif()
 
-		foreach(i RANGE 0 fromlen 2)
+		math(EXPR fromlen "${fromlen} - 1")
+
+		foreach(i RANGE 0 ${fromlen} 2)
 			list(GET _sea_module_${dep}_dep_props ${i} prop)
 			math(EXPR _vali "${i} + 1")
 			list(GET _sea_module_${dep}_dep_props ${_vali} val)
