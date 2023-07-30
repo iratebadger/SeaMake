@@ -7,7 +7,8 @@ SeaMake is a horrible thing I created years ago to enable some kind of configure
 If you have ever heard of a thing called SCube...
 
 ## Requirements
-CMake 3.5 though don't quote me on that, just use the latest version
+CMake 3.5 though don't quote me on that, just use the latest version.
+
 Your sanity.
 
 ## Usage
