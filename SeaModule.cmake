@@ -350,16 +350,16 @@ function(_SEA_MODULE_PROPERTY_LIST_CHANGE name prop_list property)
 	endif()
 
 	list(FIND _sea_module_${name}_${prop_list} ${property} pval)
-
+	
 	if(${pval} EQUAL -1)
-		set(_sea_module_${name}_${prop_list} ${property})
+		list(APPEND _sea_module_${name}_${prop_list} ${property})
 		set(_sea_module_${name}_${prop_list}_${property} ${ARGN})
-
-		SEA_SET_GLOBAL(_sea_module_${name}_${prop_list}
-						${_sea_module_${name}_${prop_list}})
 	else()
 		list(APPEND _sea_module_${name}_${prop_list}_${property} ${ARGN})
 	endif()
+
+	SEA_SET_GLOBAL(_sea_module_${name}_${prop_list}
+					${_sea_module_${name}_${prop_list}})
 
 	SEA_SET_GLOBAL(_sea_module_${name}_${prop_list}_${property}
 				${_sea_module_${name}_${prop_list}_${property}})
@@ -508,15 +508,10 @@ function(_SEA_MERGE_TARGET_PROPERTIES module)
 	SEA_LOG_VERBOSE("MERGING PROPS FOR ${module}")
 	foreach(dep ${ARGN})
 		SEA_LOG_VERBOSE(" -- FROM " ${dep})
-
 		foreach(prop ${_sea_module_${dep}_dep_props})
+			string(REPLACE ";" " " PROP_STR "${_sea_module_${dep}_dep_props_${prop}}")
+			set_property(TARGET ${module} APPEND PROPERTY ${prop} ${PROP_STR})
 			SEA_LOG_VERBOSE(" ---- " ${prop} " => ${_sea_module_${dep}_dep_props_${prop}}")
-			get_target_property(extend ${module} ${prop})
-			if(extend)
-				set_target_properties(${module} PROPERTIES ${prop} "${extend};${_sea_module_${dep}_dep_props_${prop}}")
-			else()
-				set_target_properties(${module} PROPERTIES ${prop} "${_sea_module_${dep}_dep_props_${prop}}")
-			endif()
 		endforeach()
 	endforeach()
 endfunction(_SEA_MERGE_TARGET_PROPERTIES)
@@ -575,7 +570,9 @@ function(_SEA_MODULE_BUILD_THIS module sources includes deps)
 		if(NOT "${_sea_module_${module}_props}" STREQUAL "")
 			SEA_LOG("Set target props ${module} : " ${_sea_module_${module}_props})
 			foreach(prop ${_sea_module_${module}_props})
-				set_target_properties(${module} PROPERTIES ${prop} "${_sea_module_${module}_props_${prop}}")
+				string(REPLACE ";" " " PROP_STR "${_sea_module_${module}_props_${prop}}")
+				set_property(TARGET ${module} PROPERTY ${prop} ${PROP_STR})
+				SEA_LOG(${prop} ${PROP_STR})
 			endforeach()
 		endif()
 
