@@ -154,6 +154,68 @@ function(SEA_MODULE name type mode)
 	SEA_SET_GLOBAL(_sea_module_${name}_mode "${mode}")
 endfunction(SEA_MODULE)
 
+macro(SEA_MODULE_EXTERNAL_TARGET name mode)
+	if(POLICY CMP0074)
+		cmake_policy(SET CMP0074 NEW)
+	endif()
+
+	SEA_MODULE(${name} external ${mode})
+
+    set(oneValueArgs CMAKELISTS PACKAGE)
+    set(multiValueArgs COMPONENTS)
+	cmake_parse_arguments(EX_OPTION "" "${oneValueArgs}" "${multiValueArgs}" ${ARGN})
+	
+	if(NOT DEFINED EX_OPTION_CMAKELISTS)
+		set(EX_OPTION_CMAKELISTS CMakeLists.txt.in)
+	endif()
+
+	configure_file(
+		${CMAKE_CURRENT_LIST_DIR}/${EX_OPTION_CMAKELISTS}
+		${CMAKE_BINARY_DIR}/${name}-download/CMakeLists.txt)
+
+	execute_process(
+		COMMAND ${CMAKE_COMMAND} -G "${CMAKE_GENERATOR}" .
+  		RESULT_VARIABLE result
+		WORKING_DIRECTORY ${CMAKE_BINARY_DIR}/${name}-download )
+	if(result)
+		message(${CMAKE_COMMAND} -G "${CMAKE_GENERATOR}" )
+		message(${CMAKE_BINARY_DIR}/${name}-download)
+		message(FATAL_ERROR "CMake step for ${name} failed: ${result}")
+	endif()
+
+	execute_process(
+		COMMAND ${CMAKE_COMMAND} --build . --parallel
+		RESULT_VARIABLE result
+		WORKING_DIRECTORY ${CMAKE_BINARY_DIR}/${name}-download)
+	if(result)
+		message(FATAL_ERROR "Build step for ${name} failed: ${result}")
+	endif()
+
+	execute_process(
+		COMMAND ${CMAKE_COMMAND} --install . 
+		RESULT_VARIABLE result
+		WORKING_DIRECTORY ${CMAKE_BINARY_DIR}/${name}-download )
+	if(result)
+		message(FATAL_ERROR "Install step for ${name} failed: ${result}")
+	endif()
+
+	if(${mode} STREQUAL "required")
+		set(FIND_OPT "REQUIRED")
+	endif(${mode} STREQUAL "required")
+
+	if(EX_OPTION_COMPONENTS)
+		find_package(
+			${EX_OPTION_PACKAGE} ${FIND_OPT} 
+			COMPONENTS ${EX_OPTION_COMPONENTS}
+			CONFIG PATHS ${CMAKE_BINARY_DIR}/${name}-install NO_DEFAULT_PATH)
+	else()
+		find_package(
+			${EX_OPTION_PACKAGE} ${FIND_OPT}
+			CONFIG PATHS ${CMAKE_BINARY_DIR}/${name}-install NO_DEFAULT_PATH)
+	endif()
+	
+endmacro(SEA_MODULE_EXTERNAL_TARGET)
+
 function(SEA_MODULE_COMMAND module name)
 	list(APPEND _sea_module_${module}_commands ${name})
 	SEA_SET_GLOBAL(_sea_module_${module}_commands ${_sea_module_${module}_commands})
@@ -332,6 +394,23 @@ function(SEA_MODULE_EXTERNALS name)
 
 	SEA_SET_GLOBAL(_sea_module_${name}_extern ${_sea_module_${name}_extern})
 endfunction(SEA_MODULE_EXTERNALS)
+
+########################################################################
+# Attach imported libraries to an external mdoule
+# - name: canonical module name
+# - argn: list of libraries
+########################################################################
+function(SEA_MODULE_IMPORTS name)
+	list(APPEND _sea_module_${name}_extern ${ARGN})
+
+	SEA_LOG_VERBOSE(STATUS "Adding ${name} imports ${ARGN}")
+
+	foreach(import ${ARGN})
+		set_target_properties(${import} PROPERTIES IMPORTED_GLOBAL TRUE)
+	endforeach()
+
+	SEA_SET_GLOBAL(_sea_module_${name}_extern ${_sea_module_${name}_extern})
+endfunction(SEA_MODULE_IMPORTS)
 
 ########################################################################
 # Changes an existing property in a property list.  A property list is
@@ -630,8 +709,6 @@ macro(_SEA_MODULE_GATHER includes sources libs tools)
 		elseif("${_sea_module_${dep}_target}" STREQUAL "TOOL")
 			list(APPEND ${tools} ${dep})
 		elseif("${_sea_module_${dep}_target}" STREQUAL "COMPONENT")
-		else("${_sea_module_${dep}_target}" STREQUAL "EXTERNAL")
-			list(APPEND ${libs} ${dep})
 		endif("${_sea_module_${dep}_target}" STREQUAL "EXTERNAL")
 
 		list(APPEND ${libs} ${_sea_module_${dep}_extern})
