@@ -17,6 +17,7 @@
 # the Free Software Foundation, Inc., 51 Franklin Street,
 # Boston, MA 02110-1301, USA.
 
+include (SeaFindModules)
 include (SeaMiscUtils)
 include(CMakeDependentOption)
 
@@ -166,7 +167,7 @@ endmacro(SEA_MODULE_ENABLE)
 
 macro(SEA_MODULE_DISABLE name)
 	SEA_SET_GLOBAL(SeaModule_${name}_enable OFF)
-	endmacro(SEA_MODULE_DISABLE)
+endmacro(SEA_MODULE_DISABLE)
 
 macro(SEA_MODULE_IS_ENABLED name result)
 	IF(SeaModule_${name}_enable STREQUAL ON)
@@ -332,6 +333,15 @@ function(SEA_MODULE_EXTERNALS name)
 
 	SEA_SET_GLOBAL(_sea_module_${name}_extern ${_sea_module_${name}_extern})
 endfunction(SEA_MODULE_EXTERNALS)
+
+########################################################################
+# Create an external library module with the same name
+# - name: canonical module name
+########################################################################
+function(SEA_MODULE_EXTERNAL name)
+	SEA_MODULE(${name} external optional)
+	SEA_MODULE_EXTERNALS(${name} ${name})
+endfunction(SEA_MODULE_EXTERNAL)
 
 macro(LIST_REPLACE LIST INDEX NEWVALUE)
     list(INSERT ${LIST} ${INDEX} ${NEWVALUE})

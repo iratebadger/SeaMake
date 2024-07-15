@@ -40,7 +40,8 @@ MACRO(include_modules_dir dir)
 		IF(NOT ${module} STREQUAL cmake
 			AND NOT ${module} STREQUAL bin
 			AND NOT ${module} STREQUAL tools)
-			ADD_SUBDIRECTORY(${module})
+			cmake_path(APPEND p_dir ${dir} ${module})
+			ADD_SUBDIRECTORY(${p_dir})
 		ENDIF()
 	ENDFOREACH()
 ENDMACRO()
