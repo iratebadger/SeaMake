@@ -397,7 +397,6 @@ function(SEA_MODULE_EXTERNALS name)
 endfunction(SEA_MODULE_EXTERNALS)
 
 ########################################################################
-<<<<<<< HEAD
 # Create an external library module with the same name
 # - name: canonical module name
 ########################################################################
@@ -406,12 +405,7 @@ function(SEA_MODULE_EXTERNAL name)
 	SEA_MODULE_EXTERNALS(${name} ${name})
 endfunction(SEA_MODULE_EXTERNAL)
 
-macro(LIST_REPLACE LIST INDEX NEWVALUE)
-    list(INSERT ${LIST} ${INDEX} ${NEWVALUE})
-    MATH(EXPR __INDEX "${INDEX} + 1")
-    list (REMOVE_AT ${LIST} ${__INDEX})
-endmacro(LIST_REPLACE)
-=======
+########################################################################
 # Attach imported libraries to an external mdoule
 # - name: canonical module name
 # - argn: list of libraries
@@ -427,7 +421,6 @@ function(SEA_MODULE_IMPORTS name)
 
 	SEA_SET_GLOBAL(_sea_module_${name}_extern ${_sea_module_${name}_extern})
 endfunction(SEA_MODULE_IMPORTS)
->>>>>>> e9a30117a230a205aa1e893fd992f6677cac1d43
 
 ########################################################################
 # Changes an existing property in a property list.  A property list is
