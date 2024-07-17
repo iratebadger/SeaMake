@@ -155,39 +155,33 @@ function(SEA_MODULE name type mode)
 	SEA_SET_GLOBAL(_sea_module_${name}_mode "${mode}")
 endfunction(SEA_MODULE)
 
-macro(SEA_MODULE_EXTERNAL_TARGET name mode)
-	if(POLICY CMP0074)
-		cmake_policy(SET CMP0074 NEW)
-	endif()
+function(_SEA_EXTERNAL_BUILD name)
+	foreach(dep ${_sea_external_${name}_depends})
+		if(NOT _sea_external_${dep}_sat)
+			return()
+		endif()
+	endforeach()
 
-	SEA_MODULE(${name} external ${mode})
-
-    set(oneValueArgs CMAKELISTS PACKAGE)
-    set(multiValueArgs COMPONENTS)
-	cmake_parse_arguments(EX_OPTION "" "${oneValueArgs}" "${multiValueArgs}" ${ARGN})
-	
-	if(NOT DEFINED EX_OPTION_CMAKELISTS)
-		set(EX_OPTION_CMAKELISTS CMakeLists.txt.in)
-	endif()
+	set(PROJECT_DEPENDS ${_sea_external_${name}_depends})
 
 	configure_file(
-		${CMAKE_CURRENT_LIST_DIR}/${EX_OPTION_CMAKELISTS}
-		${CMAKE_BINARY_DIR}/${name}-download/CMakeLists.txt)
+		${_sea_external_${name}_list_dir}/${EX_OPTION_CMAKELISTS}
+		${_sea_external_${name}_bin_dir}/${name}-download/CMakeLists.txt)
 
 	execute_process(
 		COMMAND ${CMAKE_COMMAND} -G "${CMAKE_GENERATOR}" .
   		RESULT_VARIABLE result
-		WORKING_DIRECTORY ${CMAKE_BINARY_DIR}/${name}-download )
+		WORKING_DIRECTORY ${_sea_external_${name}_bin_dir}/${name}-download )
 	if(result)
 		message(${CMAKE_COMMAND} -G "${CMAKE_GENERATOR}" )
-		message(${CMAKE_BINARY_DIR}/${name}-download)
+		message(${_sea_external_${name}_bin_dir}/${name}-download)
 		message(FATAL_ERROR "CMake step for ${name} failed: ${result}")
 	endif()
 
 	execute_process(
 		COMMAND ${CMAKE_COMMAND} --build . --parallel
 		RESULT_VARIABLE result
-		WORKING_DIRECTORY ${CMAKE_BINARY_DIR}/${name}-download)
+		WORKING_DIRECTORY ${_sea_external_${name}_bin_dir}/${name}-download)
 	if(result)
 		message(FATAL_ERROR "Build step for ${name} failed: ${result}")
 	endif()
@@ -195,26 +189,58 @@ macro(SEA_MODULE_EXTERNAL_TARGET name mode)
 	execute_process(
 		COMMAND ${CMAKE_COMMAND} --install . 
 		RESULT_VARIABLE result
-		WORKING_DIRECTORY ${CMAKE_BINARY_DIR}/${name}-download )
+		WORKING_DIRECTORY ${_sea_external_${name}_bin_dir}/${name}-download )
 	if(result)
 		message(FATAL_ERROR "Install step for ${name} failed: ${result}")
+		exit()
 	endif()
 
-	if(${mode} STREQUAL "required")
+	if(${_sea_module_${name}_mode} STREQUAL "required")
 		set(FIND_OPT "REQUIRED")
-	endif(${mode} STREQUAL "required")
+	endif(${_sea_module_${name}_mode} STREQUAL "required")
 
-	if(EX_OPTION_COMPONENTS)
+	if(${_sea_external_${name}_components})
 		find_package(
-			${EX_OPTION_PACKAGE} ${FIND_OPT} 
-			COMPONENTS ${EX_OPTION_COMPONENTS}
-			CONFIG PATHS ${CMAKE_BINARY_DIR}/${name}-install NO_DEFAULT_PATH)
+			${_sea_external_${name}_package} ${FIND_OPT} 
+			COMPONENTS ${_sea_external_${name}_components}
+			CONFIG PATHS ${_sea_external_${name}_bin_dir}/${name}-install NO_DEFAULT_PATH)
 	else()
 		find_package(
-			${EX_OPTION_PACKAGE} ${FIND_OPT}
-			CONFIG PATHS ${CMAKE_BINARY_DIR}/${name}-install NO_DEFAULT_PATH)
+			${_sea_external_${name}_package} ${FIND_OPT}
+			CONFIG PATHS ${_sea_external_${name}_bin_dir}/${name}-install NO_DEFAULT_PATH)
 	endif()
+
+	SEA_SET_GLOBAL(_sea_external_${name}_sat TRUE)
+
+	foreach(dep ${_sea_external_${name}_depends})
+		_SEA_EXTERNAL_BUILD(${dep})
+	endforeach()
+endfunction(_SEA_EXTERNAL_BUILD)
+
+macro(SEA_MODULE_EXTERNAL_TARGET name mode)
+	if(POLICY CMP0074)
+		cmake_policy(SET CMP0074 NEW)
+	endif()
+
+	SEA_MODULE(${name} external ${mode})
+	SEA_SET_GLOBAL(_sea_external_${name}_list_dir ${CMAKE_CURRENT_LIST_DIR})
+	SEA_SET_GLOBAL(_sea_external_${name}_bin_dir ${CMAKE_BINARY_DIR})
+
+    set(oneValueArgs CMAKELISTS PACKAGE)
+    set(multiValueArgs DEPENDS COMPONENTS)
+	cmake_parse_arguments(EX_OPTION "" "${oneValueArgs}" "${multiValueArgs}" ${ARGN})
 	
+	if(NOT DEFINED EX_OPTION_CMAKELISTS)
+		set(EX_OPTION_CMAKELISTS CMakeLists.txt.in)
+	endif()
+
+	SEA_SET_GLOBAL(_sea_external_${name}_sat FALSE)
+	SEA_SET_GLOBAL(_sea_external_${name}_cmake_lists ${EX_OPTION_CMAKELISTS})
+	SEA_SET_GLOBAL(_sea_external_${name}_package ${EX_OPTION_PACKAGE})
+	SEA_SET_GLOBAL(_sea_external_${name}_components ${EX_OPTION_COMPONENTS})
+	SEA_SET_GLOBAL(_sea_external_${name}_depends ${EX_OPTION_DEPENDS})
+
+	_SEA_EXTERNAL_BUILD(${name})
 endmacro(SEA_MODULE_EXTERNAL_TARGET)
 
 function(SEA_MODULE_COMMAND module name)

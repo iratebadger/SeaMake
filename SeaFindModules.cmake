@@ -40,7 +40,12 @@ MACRO(include_modules_dir dir)
 		IF(NOT ${module} STREQUAL cmake
 			AND NOT ${module} STREQUAL bin
 			AND NOT ${module} STREQUAL tools)
-			cmake_path(APPEND p_dir ${dir} ${module})
+			if(CMAKE_VERSION VERSION_GREATER_EQUAL "3.20.0") 
+				cmake_path(APPEND p_dir ${dir} ${module})
+			else()
+				file(TO_NATIVE_PATH "/" _separator)
+				set(p_dir ${dir}${_separator}${module})
+			endif()
 			ADD_SUBDIRECTORY(${p_dir})
 		ENDIF()
 	ENDFOREACH()
