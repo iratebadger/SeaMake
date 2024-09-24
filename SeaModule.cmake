@@ -19,7 +19,7 @@
 
 include (SeaFindModules)
 include (SeaMiscUtils)
-include(CMakeDependentOption)
+include (CMakeDependentOption)
 
 if(NOT WIN32)
   string(ASCII 27 Esc)
@@ -147,6 +147,7 @@ function(SEA_MODULE name type mode)
 	SEA_SET_GLOBAL_IF_NOT_SET(_sea_module_${name}_extern "")
 	SEA_SET_GLOBAL_IF_NOT_SET(_sea_module_${name}_props "")
 	SEA_SET_GLOBAL_IF_NOT_SET(_sea_module_${name}_dep_props "")
+	SEA_SET_GLOBAL_IF_NOT_SET(_sea_module_${name}_target_cmd "")
 
 	SEA_SET_GLOBAL(_sea_module_${name}_dynamic "")
 
@@ -527,6 +528,17 @@ function(SEA_MODULE_DYNAMIC_TARGET name)
 	SEA_SET_GLOBAL(_sea_module_${name}_dynamic ${_sea_module_${name}_dynamic})
 endfunction(SEA_MODULE_DYNAMIC_TARGET)
 
+########################################################################
+# Adds a command(s) to run once the target is realized in cmake
+# - name: canonical module name
+# - command(s) array of commands to execute.
+########################################################################
+function(SEA_MODULE_TARGET_CMD name)
+	list(APPEND _sea_module_${name}_target_cmd ${ARGN})
+	SEA_SET_GLOBAL(_sea_module_${name}_target_cmd
+					${_sea_module_${name}_target_cmd})
+endfunction(SEA_MODULE_TARGET_CMD)
+
 function(_SEA_MODULE_RESOLVE_THIS name)
 	set(can_resolve TRUE)
 	set(is_resolved TRUE)
@@ -534,22 +546,22 @@ function(_SEA_MODULE_RESOLVE_THIS name)
 
 	list(APPEND module_enable "SeaModule_${name}_enable")
 
-	if("${_sea_module_${name}_target}" STREQUAL "META")
-		SEA_SET_GLOBAL(SeaModule_${name}_enable ON)
-	elseif(NOT SeaModule_${name}_enable)
+	#if("${_sea_module_${name}_target}" STREQUAL "META")
+	#	SEA_SET_GLOBAL(SeaModule_${name}_enable ON)
+	if(NOT SeaModule_${name}_enable)
 		set(can_resolve FALSE)
 
 		if("${_sea_module_${name}_mode}" STREQUAL "REQUIRED")
 			SEA_ERROR("ERROR : Required module " ${name} " is disabled")
 		endif("${_sea_module_${name}_mode}" STREQUAL "REQUIRED")
 
-	else("${_sea_module_${name}_target}" STREQUAL "META")
+	else()
 		foreach(dep ${_sea_module_${name}_deps})
 			list(FIND _sea_modules_resolved ${dep} dep_res_index)
 			list(FIND _sea_modules ${dep} dep_module_index)
 
 			if(dep_module_index LESS 0)
-				SEA_ERROR("	* ${name} Failed to locate dependency ${dep}")
+				SEA_ERROR("	* ${name} Failed to locate dependency \"${dep}\"")
 				set(can_resolve FALSE)
 				break()
 			endif()
@@ -568,7 +580,7 @@ function(_SEA_MODULE_RESOLVE_THIS name)
 				set(is_resolved FALSE)
 			endif()
 		endforeach(dep)
-	endif("${_sea_module_${name}_target}" STREQUAL "META")
+	endif()
 
 	if(NOT can_resolve)
 		set(SeaModule_${name}_enable OFF)
@@ -624,8 +636,9 @@ function(_SEA_MERGE_TARGET_PROPERTIES module)
 	foreach(dep ${ARGN})
 		SEA_LOG_VERBOSE(" -- FROM " ${dep})
 		foreach(prop ${_sea_module_${dep}_dep_props})
-			#string(REPLACE ";" " " PROP_STR "${_sea_module_${dep}_dep_props_${prop}}")
-			set_property(TARGET ${module} APPEND PROPERTY ${prop} ${_sea_module_${dep}_dep_props_${prop}})
+			foreach(val ${_sea_module_${dep}_dep_props_${prop}})
+				set_property(TARGET ${module} APPEND PROPERTY ${prop} ${val})
+			endforeach()
 			SEA_LOG_VERBOSE(" ---- " ${prop} " => ${_sea_module_${dep}_dep_props_${prop}}")
 		endforeach()
 	endforeach()
@@ -649,55 +662,88 @@ function(_SEA_PRINT_MODULE_SUMMARY name)
 	SEA_LOG(STATUS "")
 endfunction(_SEA_PRINT_MODULE_SUMMARY)
 
+function(_SEA_EXECUTE_TARGET_CMDS target module)
+	if(_sea_module_${module}_target_cmd)
+		set(OFIN "${CMAKE_BINARY_DIR}/sea_foam/${target}.${module}.cmake.in")
+		set(OF "${CMAKE_BINARY_DIR}/sea_foam/${target}.${module}.cmake")
+
+		file(WRITE ${OFIN} "")
+		file(WRITE ${OF} "")
+		
+		foreach(line ${_sea_module_${module}_target_cmd})
+			file(APPEND "${OFIN}" "${line}\n")
+		endforeach()
+
+		set(MODULE ${module})
+
+		configure_file(${OFIN} ${OF})
+
+		include(${OF})
+	endif()
+endfunction(_SEA_EXECUTE_TARGET_CMDS)
+
 function(_SEA_MODULE_BUILD_THIS module sources includes deps)
-	if(NOT "${${sources}}" STREQUAL "")
-		if("${_sea_module_${module}_target}" STREQUAL "STATIC"
-			OR "${_sea_module_${module}_target}" STREQUAL "SHARED"
-			OR "${_sea_module_${module}_target}" STREQUAL "MODULE")
-			SEA_LOG(STATUS "building " ${module} " as "
-					"${_sea_module_${module}_target}" " library")
-			add_library(
-				${module}
-				${_sea_module_${module}_target}
-				${${sources}})
-		elseif("${_sea_module_${module}_target}" STREQUAL "TEST")
-			SEA_LOG(STATUS "building " ${module} " as test")
-			add_executable(
-				${module}
-				${${sources}})
-			add_test(${module} ${module})
-		elseif("${_sea_module_${module}_target}" STREQUAL "EXTERNAL"
-				OR "${_sea_module_${module}_target}" STREQUAL "TOOL")
-			return()
-		elseif("${_sea_module_${module}_target}" STREQUAL "COMPONENT")
-			SEA_LOG(STATUS "building " ${module} " as component")
-			add_library(
-				${module}
-				OBJECT
-				${${sources}})
-		else()
-			SEA_LOG(STATUS "building " ${module} " as executable")
-			add_executable(
-				${module}
-				${${sources}})
-		endif()
+	if("${_sea_module_${module}_target}" STREQUAL "STATIC"
+		OR "${_sea_module_${module}_target}" STREQUAL "SHARED"
+		OR "${_sea_module_${module}_target}" STREQUAL "MODULE")
+		SEA_LOG(STATUS "building " ${module} " as "
+				"${_sea_module_${module}_target}" " library")
+		add_library(
+			${module}
+			${_sea_module_${module}_target}
+			${${sources}})
+	elseif("${_sea_module_${module}_target}" STREQUAL "TEST")
+		SEA_LOG(STATUS "building " ${module} " as test")
+		add_executable(
+			${module}
+			${${sources}})
+		add_test(${module} ${module})
+	elseif("${_sea_module_${module}_target}" STREQUAL "EXTERNAL"
+			OR "${_sea_module_${module}_target}" STREQUAL "TOOL")
+		return()
+	elseif("${_sea_module_${module}_target}" STREQUAL "COMPONENT")
+		SEA_LOG(STATUS "building " ${module} " as component")
+		add_library(
+			${module}
+			OBJECT
+			${${sources}})
+	elseif("${_sea_module_${module}_target}" STREQUAL "INTERFACE")
+		SEA_LOG(STATUS "building " ${module} " as interface")
+		add_library(
+			${module}
+			INTERFACE
+			${${sources}})
+	else()
+		SEA_LOG(STATUS "building " ${module} " as executable")
+		add_executable(
+			${module}
+			${${sources}})
+	endif()
 
-		if(NOT "${_sea_module_${module}_props}" STREQUAL "")
-			SEA_LOG("Set target props ${module} : " ${_sea_module_${module}_props})
-			foreach(prop ${_sea_module_${module}_props})
-				#string(REPLACE ";" " " PROP_STR "${_sea_module_${module}_props_${prop}}")
-				set_property(TARGET ${module} PROPERTY ${prop} ${_sea_module_${module}_props_${prop}})
-				SEA_LOG(${prop} ${PROP_STR})
+	if(NOT "${_sea_module_${module}_props}" STREQUAL "")
+		SEA_LOG_VERBOSE("Set target props ${module} : " ${_sea_module_${module}_props})
+		foreach(prop ${_sea_module_${module}_props})
+			foreach(val ${_sea_module_${module}_props_${prop}})
+				set_property(TARGET ${module} APPEND PROPERTY ${prop} ${val})
 			endforeach()
-		endif()
+			SEA_LOG_VERBOSE(${prop} ${PROP_STR})
+		endforeach()
+	endif()
 
-		_SEA_MERGE_TARGET_PROPERTIES(${module} ${${deps}})
+	_SEA_MERGE_TARGET_PROPERTIES(${module} ${${deps}})
 
-		foreach(inc ${${includes}})
-			SEA_LOG_VERBOSE(STATUS "${module} include : ${inc}")
+	foreach(inc ${${includes}})
+		SEA_LOG_VERBOSE(STATUS "${module} include : ${inc}")
+		if("${_sea_module_${module}_target}" STREQUAL "INTERFACE")
+			target_include_directories(${module} INTERFACE ${inc})
+		else()
 			target_include_directories(${module} PRIVATE ${inc})
-		endforeach(inc)
-	endif(NOT "${${sources}}" STREQUAL "")
+		endif()
+	endforeach(inc)
+
+	if(TARGET ${module})
+		_SEA_EXECUTE_TARGET_CMDS(${module} ${module})
+	endif()
 endfunction(_SEA_MODULE_BUILD_THIS)
 
 function(_SEA_MDOULE_COMMANDS module)
@@ -732,19 +778,15 @@ macro(_SEA_MODULE_GATHER includes sources libs tools)
 			continue()
 		endif(NOT SeaModule_${dep}_enable)
 
-		if("${_sea_module_${dep}_target}" STREQUAL "META")
-			continue()
-		endif("${_sea_module_${dep}_target}" STREQUAL "META")
-
-		set(${includes} ${${includes}} ${_sea_module_${dep}_include})
-
-		if("${_sea_module_${dep}_target}" STREQUAL "EXTERNAL")
-		elseif("${_sea_module_${dep}_target}" STREQUAL "TOOL")
+		if("${_sea_module_${dep}_target}" STREQUAL "TOOL")
 			list(APPEND ${tools} ${dep})
-		elseif("${_sea_module_${dep}_target}" STREQUAL "COMPONENT")
-		endif("${_sea_module_${dep}_target}" STREQUAL "EXTERNAL")
-
+		elseif("${_sea_module_${dep}_target}" STREQUAL "META")
+		else()
+			list(APPEND ${libs} ${dep})
+		endif()
+		
 		list(APPEND ${libs} ${_sea_module_${dep}_extern})
+		list(APPEND ${includes} ${_sea_module_${dep}_include})
 	endforeach(dep ${ARGN})
 endmacro(_SEA_MODULE_GATHER)
 
@@ -810,6 +852,98 @@ macro(_SEA_MODULE_RESOLVE_DYNAMIC_TARGETS targets)
 	list(REMOVE_DUPLICATES ${targets})
 endmacro()
 
+function(_SEA_MODULE_BUILD_MODULE name)
+	if("${_sea_module_${module}_target}" STREQUAL "META")
+		return()
+	endif("${_sea_module_${module}_target}" STREQUAL "META")
+
+	if(NOT SeaModule_${module}_enable)
+		return()
+	endif(NOT SeaModule_${module}_enable)
+
+	set(_module_includes ${_sea_module_${module}_include})
+	set(_module_sources "")
+	set(_module_depends "")
+	set(_module_libs "")
+	set(_module_tools "")
+
+	_SEA_MODULE_FLATTEN_DEPS(_module_depends ${module})
+
+	_SEA_MODULE_GATHER(_module_includes
+						_module_sources
+						_module_libs
+						_module_tools
+						${_module_depends})
+
+	SEA_LOG_VERBOSE("GATHERED ${module} ${_module_depends}")
+
+	_SEA_MODULE_RESOLVE_INCLUDES(_module_includes ${_module_includes})
+	_SEA_MODULE_RESOLVE_SOURCES(_module_sources ${_sea_module_${module}_sources})
+
+	if(NOT "${_module_includes}" STREQUAL "")
+		list(REVERSE _module_includes)
+		list(REMOVE_DUPLICATES _module_includes)
+		list(REVERSE _module_includes)
+	endif(NOT "${_module_includes}" STREQUAL "")
+
+	#if(NOT "${_module_sources}" STREQUAL "")
+		list(REVERSE _module_sources)
+		list(REMOVE_DUPLICATES _module_sources)
+		list(REVERSE _module_sources)
+		_SEA_MODULE_BUILD_THIS(${module} _module_sources _module_includes _module_depends)
+	#else(NOT "${_module_sources}" STREQUAL "")
+	#	continue()
+	#endif(NOT "${_module_sources}" STREQUAL "")
+
+	_SEA_MDOULE_COMMANDS(${module})
+
+	if("${_sea_module_${module}_target}" STREQUAL "COMPONENT")
+		return()
+	endif("${_sea_module_${module}_target}" STREQUAL "COMPONENT")
+
+	# Pull in components
+	foreach(dep ${_module_depends})
+		if(NOT "${_sea_module_${dep}_target}" STREQUAL "COMPONENT")
+			continue()
+		endif(NOT "${_sea_module_${dep}_target}" STREQUAL "COMPONENT")
+
+		if(NOT SeaModule_${dep}_enable)
+			continue()
+		endif(NOT SeaModule_${dep}_enable)
+
+		if(TARGET ${dep})
+			target_sources(${module} PRIVATE "$<TARGET_OBJECTS:${dep}>")
+		endif()
+	endforeach(dep)
+
+	if(NOT "${_module_libs}" STREQUAL "")
+		#Reverse the libs list then remove dups to ensure the right dep order
+		list(REVERSE _module_libs)
+		list(REMOVE_DUPLICATES _module_libs)
+		list(REVERSE _module_libs)
+
+		if(NOT "${_sea_module_${module}_target}" STREQUAL "EXTERNAL"
+			AND NOT "${_sea_module_${module}_target}" STREQUAL "COMPONENT"
+			AND NOT "${_sea_module_${module}_target}" STREQUAL "INTERFACE")
+			#Ensure no self linking
+			list(REMOVE_ITEM _module_libs ${module})
+			string (REPLACE ";" " " _module_libs_str "${_module_libs}")
+			SEA_LOG("linking ${module} ${_module_libs_str}")
+			target_link_libraries(${module} ${_module_libs})
+		endif(NOT "${_sea_module_${module}_target}" STREQUAL "EXTERNAL"
+			AND NOT "${_sea_module_${module}_target}" STREQUAL "COMPONENT"
+			AND NOT "${_sea_module_${module}_target}" STREQUAL "INTERFACE")
+	endif(NOT "${_module_libs}" STREQUAL "")
+
+	if(NOT "${_module_tools}" STREQUAL "")
+		list(REVERSE _module_tools)
+		list(REMOVE_DUPLICATES _module_tools)
+		list(REVERSE _module_tools)
+		SEA_LOG("Ading tool dependency ${module} ${_module_tools}")
+		add_dependencies(${module} ${_module_tools})
+	endif(NOT "${_module_tools}" STREQUAL "")
+endfunction()
+
 ########################################################################
 # Emit the build targets
 ########################################################################
@@ -822,89 +956,6 @@ function(SEA_MODULE_BUILD name)
 	_SEA_PRINT_MODULE_SUMMARY(${name})
 
 	foreach(module ${_sea_modules})
-		set(_module_depends "")
-		set(_module_libs "")
-
-		if("${_sea_module_${module}_target}" STREQUAL "META")
-			continue()
-		endif("${_sea_module_${module}_target}" STREQUAL "META")
-
-		if(NOT SeaModule_${module}_enable)
-			continue()
-		endif(NOT SeaModule_${module}_enable)
-
-		set(_module_includes ${_sea_module_${module}_include})
-
-		_SEA_MODULE_FLATTEN_DEPS(_module_depends ${module})
-
-		_SEA_MODULE_GATHER(_module_includes
-							_module_sources
-							_module_libs
-							_module_tools
-							${_module_depends})
-
-		SEA_LOG_VERBOSE("GATHERED ${module} ${_module_depends}")
-
-		_SEA_MODULE_RESOLVE_INCLUDES(_module_includes ${_module_includes})
-		_SEA_MODULE_RESOLVE_SOURCES(_module_sources ${_sea_module_${module}_sources})
-
-		if(NOT "${_module_includes}" STREQUAL "")
-			list(REVERSE _module_includes)
-			list(REMOVE_DUPLICATES _module_includes)
-			list(REVERSE _module_includes)
-		endif(NOT "${_module_includes}" STREQUAL "")
-
-		if(NOT "${_module_sources}" STREQUAL "")
-			list(REVERSE _module_sources)
-			list(REMOVE_DUPLICATES _module_sources)
-			list(REVERSE _module_sources)
-			_SEA_MODULE_BUILD_THIS(${module} _module_sources _module_includes _module_depends)
-		else(NOT "${_module_sources}" STREQUAL "")
-			continue()
-		endif(NOT "${_module_sources}" STREQUAL "")
-
-		_SEA_MDOULE_COMMANDS(${module})
-
-		if("${_sea_module_${module}_target}" STREQUAL "COMPONENT")
-			continue()
-		endif("${_sea_module_${module}_target}" STREQUAL "COMPONENT")
-
-		# Pull in components
-		foreach(dep ${_module_depends})
-			if(NOT "${_sea_module_${dep}_target}" STREQUAL "COMPONENT")
-				continue()
-			endif(NOT "${_sea_module_${dep}_target}" STREQUAL "COMPONENT")
-
-			if(NOT SeaModule_${dep}_enable)
-				continue()
-			endif(NOT SeaModule_${dep}_enable)
-
-			if(TARGET ${dep})
-				target_sources(${module} PRIVATE "$<TARGET_OBJECTS:${dep}>")
-			endif()
-		endforeach(dep)
-
-		if(NOT "${_module_libs}" STREQUAL "")
-			#Reverse the libs list then remove dups to ensure the right dep order
-			list(REVERSE _module_libs)
-			list(REMOVE_DUPLICATES _module_libs)
-			list(REVERSE _module_libs)
-
-			if(NOT "${_sea_module_${module}_target}" STREQUAL "EXTERNAL"
-				AND NOT "${_sea_module_${module}_target}" STREQUAL "COMPONENT")
-				#Ensure no self linking
-				list(REMOVE_ITEM _module_libs ${module})
-				target_link_libraries(${module} ${_module_libs})
-			endif(NOT "${_sea_module_${module}_target}" STREQUAL "EXTERNAL"
-				AND NOT "${_sea_module_${module}_target}" STREQUAL "COMPONENT")
-		endif(NOT "${_module_libs}" STREQUAL "")
-
-		if(NOT "${_module_tools}" STREQUAL "")
-			list(REVERSE _module_tools)
-			list(REMOVE_DUPLICATES _module_tools)
-			list(REVERSE _module_tools)
-
-			add_dependencies(${module} ${_module_tools})
-		endif(NOT "${_module_tools}" STREQUAL "")
+		_SEA_MODULE_BUILD_MODULE(${module})
 	endforeach(module)
 endfunction(SEA_MODULE_BUILD)
