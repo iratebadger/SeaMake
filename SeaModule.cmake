@@ -104,7 +104,7 @@ endfunction(SEA_SET_GLOBAL_IF_NOT_SET)
 ########################################################################
 # Register a module into the system
 # - name: canonical module name
-# - type: module type - static shared module test executable external
+# - type: module type - static shared module test executable external interface component meta
 # - mode: enable mode - optional required request
 # - argn: list of dependencies
 ########################################################################
@@ -148,6 +148,7 @@ function(SEA_MODULE name type mode)
 	SEA_SET_GLOBAL_IF_NOT_SET(_sea_module_${name}_props "")
 	SEA_SET_GLOBAL_IF_NOT_SET(_sea_module_${name}_dep_props "")
 	SEA_SET_GLOBAL_IF_NOT_SET(_sea_module_${name}_target_cmd "")
+	SEA_SET_GLOBAL_IF_NOT_SET(_sea_module_${name}_link_dirs "")
 
 	SEA_SET_GLOBAL(_sea_module_${name}_dynamic "")
 
@@ -200,7 +201,9 @@ function(_SEA_EXTERNAL_BUILD name)
 		set(FIND_OPT "REQUIRED")
 	endif(${_sea_module_${name}_mode} STREQUAL "required")
 
-	if(${_sea_external_${name}_components})
+	cmake_policy(SET CMP0074 NEW)
+	cmake_policy(SET CMP0144 NEW)
+	if(_sea_external_${name}_components)
 		find_package(
 			${_sea_external_${name}_package} ${FIND_OPT} 
 			COMPONENTS ${_sea_external_${name}_components}
@@ -210,6 +213,9 @@ function(_SEA_EXTERNAL_BUILD name)
 			${_sea_external_${name}_package} ${FIND_OPT}
 			CONFIG PATHS ${_sea_external_${name}_bin_dir}/${name}-install NO_DEFAULT_PATH)
 	endif()
+
+	SEA_SET_GLOBAL(_sea_module_${name}_include_dirs ${${_sea_external_${name}_package}_INCLUDE_DIRS})
+	SEA_SET_GLOBAL(_sea_module_${name}_link_dirs ${${_sea_external_${name}_package}_LIBRARY_DIRS})
 
 	SEA_SET_GLOBAL(_sea_external_${name}_sat TRUE)
 
@@ -781,6 +787,7 @@ macro(_SEA_MODULE_GATHER includes sources libs tools)
 		if("${_sea_module_${dep}_target}" STREQUAL "TOOL")
 			list(APPEND ${tools} ${dep})
 		elseif("${_sea_module_${dep}_target}" STREQUAL "META")
+		elseif("${_sea_module_${dep}_target}" STREQUAL "EXTERNAL")
 		else()
 			list(APPEND ${libs} ${dep})
 		endif()
@@ -901,7 +908,7 @@ function(_SEA_MODULE_BUILD_MODULE name)
 		return()
 	endif("${_sea_module_${module}_target}" STREQUAL "COMPONENT")
 
-	# Pull in components
+	# Pull in components and search paths
 	foreach(dep ${_module_depends})
 		if(NOT "${_sea_module_${dep}_target}" STREQUAL "COMPONENT")
 			continue()
@@ -916,6 +923,14 @@ function(_SEA_MODULE_BUILD_MODULE name)
 		endif()
 	endforeach(dep)
 
+	#Set link search paths
+	set(TARGET_LINK_MODE PUBLIC)
+	if ("${_sea_module_${module}_target}" STREQUAL "EXECUTABLE")
+		set(TARGET_LINK_MODE PRIVATE)
+	elseif ("${_sea_module_${module}_target}" STREQUAL "INTERFACE")
+		set(TARGET_LINK_MODE INTERFACE)
+	endif()
+
 	if(NOT "${_module_libs}" STREQUAL "")
 		#Reverse the libs list then remove dups to ensure the right dep order
 		list(REVERSE _module_libs)
@@ -923,16 +938,20 @@ function(_SEA_MODULE_BUILD_MODULE name)
 		list(REVERSE _module_libs)
 
 		if(NOT "${_sea_module_${module}_target}" STREQUAL "EXTERNAL"
-			AND NOT "${_sea_module_${module}_target}" STREQUAL "COMPONENT"
-			AND NOT "${_sea_module_${module}_target}" STREQUAL "INTERFACE")
+			AND NOT "${_sea_module_${module}_target}" STREQUAL "COMPONENT")
 			#Ensure no self linking
 			list(REMOVE_ITEM _module_libs ${module})
 			string (REPLACE ";" " " _module_libs_str "${_module_libs}")
 			SEA_LOG("linking ${module} ${_module_libs_str}")
-			target_link_libraries(${module} ${_module_libs})
-		endif(NOT "${_sea_module_${module}_target}" STREQUAL "EXTERNAL"
-			AND NOT "${_sea_module_${module}_target}" STREQUAL "COMPONENT"
-			AND NOT "${_sea_module_${module}_target}" STREQUAL "INTERFACE")
+
+			foreach(dep ${_module_depends})
+				if(_sea_module_${dep}_link_dirs)
+					target_link_directories(${module} ${TARGET_LINK_MODE} ${_sea_module_${dep}_link_dirs})
+				endif()
+			endforeach()
+
+			target_link_libraries(${module} ${TARGET_LINK_MODE} ${_module_libs})
+		endif()
 	endif(NOT "${_module_libs}" STREQUAL "")
 
 	if(NOT "${_module_tools}" STREQUAL "")
